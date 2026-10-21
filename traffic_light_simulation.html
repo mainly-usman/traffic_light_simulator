@@ -1,0 +1,1477 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Traffic Light & Queue Simulation</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#131e32',
+                            900: '#0f172a',
+                            950: '#080d1a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains+Mono', monospace; }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+        ::-webkit-scrollbar-thumb { background: rgba(51, 65, 85, 0.8); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(71, 85, 105, 1); }
+
+        /* Canvas styling */
+        #simCanvas {
+            background-color: #1e293b;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.5);
+        }
+
+        /* Glow utilities */
+        .glow-red { box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); }
+        .glow-yellow { box-shadow: 0 0 15px rgba(234, 179, 8, 0.6); }
+        .glow-green { box-shadow: 0 0 15px rgba(34, 197, 94, 0.6); }
+        .glow-blue { box-shadow: 0 0 15px rgba(59, 130, 246, 0.6); }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased overflow-x-hidden select-none">
+
+    <!-- Header Navigation -->
+    <header class="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-30 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30">
+                    <i data-lucide="git-commit" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+                        Smart Intersection Controller
+                        <span class="text-xs px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full font-mono">v2.4 Queue-FSM</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">Queue Data Structure & Dynamic Adaptive Signal Simulation</p>
+                </div>
+            </div>
+
+            <!-- Global Quick Controls & Metrics Overview -->
+            <div class="flex items-center space-x-2 sm:space-x-4">
+                <div class="hidden md:flex items-center space-x-4 px-3 py-1.5 bg-slate-850 rounded-lg border border-slate-800 text-xs font-mono">
+                    <div>
+                        <span class="text-slate-400">FPS:</span>
+                        <span id="fpsCounter" class="text-emerald-400 font-bold">60</span>
+                    </div>
+                    <div class="h-3 w-px bg-slate-700"></div>
+                    <div>
+                        <span class="text-slate-400">Time:</span>
+                        <span id="simTimeDisplay" class="text-indigo-400 font-bold">00:00</span>
+                    </div>
+                </div>
+
+                <button id="btnInfoModal" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition border border-slate-700" title="Data Structure & Logic Architecture">
+                    <i data-lucide="help-circle" class="w-5 h-5"></i>
+                </button>
+                
+                <button id="btnEmergencyDispatch" class="px-3 py-2 bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs rounded-lg transition flex items-center space-x-1.5 shadow-lg shadow-rose-900/30 animate-pulse">
+                    <i data-lucide="siren" class="w-4 h-4"></i>
+                    <span>Dispatch Ambulance</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Layout -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Left Column: Canvas Engine & Visuals (7 cols) -->
+        <section class="lg:col-span-7 flex flex-col space-y-4">
+            
+            <!-- Canvas Container -->
+            <div class="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl group">
+                
+                <!-- Canvas -->
+                <div class="relative aspect-square w-full">
+                    <canvas id="simCanvas" class="w-full h-full block"></canvas>
+                </div>
+
+                <!-- Floating Canvas Overlay Controls (Top Left) -->
+                <div class="absolute top-3 left-3 flex flex-wrap gap-2 z-10">
+                    <div id="modeBadge" class="px-2.5 py-1 bg-slate-900/90 backdrop-blur border border-slate-700 rounded-lg text-xs font-semibold text-indigo-400 flex items-center space-x-1.5 shadow">
+                        <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+                        <span id="modeBadgeText">Adaptive Queue Mode</span>
+                    </div>
+                    <div id="phaseBadge" class="px-2.5 py-1 bg-slate-900/90 backdrop-blur border border-slate-700 rounded-lg text-xs font-semibold text-emerald-400 flex items-center space-x-1.5 shadow">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                        <span id="phaseBadgeText">Phase: N-S Green</span>
+                    </div>
+                </div>
+
+                <!-- Floating Speed & Play Controls (Bottom Center) -->
+                <div class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur border border-slate-700/80 rounded-xl p-1.5 flex items-center space-x-2 shadow-xl z-10">
+                    <button id="btnPlayPause" class="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition flex items-center justify-center">
+                        <i data-lucide="pause" id="playIcon" class="w-4 h-4"></i>
+                    </button>
+                    <button id="btnStep" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition" title="Step 1 Frame">
+                        <i data-lucide="step-forward" class="w-4 h-4"></i>
+                    </button>
+                    <button id="btnReset" class="p-2 bg-slate-800 hover:bg-rose-900/40 hover:text-rose-400 text-slate-300 rounded-lg transition" title="Reset Simulation">
+                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                    </button>
+                    <div class="h-4 w-px bg-slate-700"></div>
+                    <!-- Speed Multiplier Buttons -->
+                    <div class="flex bg-slate-800 rounded-lg p-0.5 text-xs font-mono">
+                        <button class="speed-btn px-2 py-1 rounded text-slate-400 hover:text-white" data-speed="0.5">0.5x</button>
+                        <button class="speed-btn px-2 py-1 rounded bg-indigo-600 text-white font-bold" data-speed="1">1x</button>
+                        <button class="speed-btn px-2 py-1 rounded text-slate-400 hover:text-white" data-speed="2">2x</button>
+                        <button class="speed-btn px-2 py-1 rounded text-slate-400 hover:text-white" data-speed="5">5x</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Queue Metrics Visual Indicators per Direction -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <!-- North Queue Card -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+                    <div class="flex items-center justify-between text-xs text-slate-400 font-medium mb-1">
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-blue-500"></span> North Lane
+                        </span>
+                        <i data-lucide="arrow-down" class="w-3.5 h-3.5 text-slate-500"></i>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <span id="queueCountNorth" class="text-xl font-extrabold font-mono text-white">0</span>
+                        <span class="text-xs text-slate-500">cars</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
+                        <div id="queueBarNorth" class="bg-blue-500 h-full w-0 transition-all duration-300"></div>
+                    </div>
+                </div>
+
+                <!-- South Queue Card -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+                    <div class="flex items-center justify-between text-xs text-slate-400 font-medium mb-1">
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-teal-500"></span> South Lane
+                        </span>
+                        <i data-lucide="arrow-up" class="w-3.5 h-3.5 text-slate-500"></i>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <span id="queueCountSouth" class="text-xl font-extrabold font-mono text-white">0</span>
+                        <span class="text-xs text-slate-500">cars</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
+                        <div id="queueBarSouth" class="bg-teal-500 h-full w-0 transition-all duration-300"></div>
+                    </div>
+                </div>
+
+                <!-- East Queue Card -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+                    <div class="flex items-center justify-between text-xs text-slate-400 font-medium mb-1">
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-purple-500"></span> East Lane
+                        </span>
+                        <i data-lucide="arrow-left" class="w-3.5 h-3.5 text-slate-500"></i>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <span id="queueCountEast" class="text-xl font-extrabold font-mono text-white">0</span>
+                        <span class="text-xs text-slate-500">cars</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
+                        <div id="queueBarEast" class="bg-purple-500 h-full w-0 transition-all duration-300"></div>
+                    </div>
+                </div>
+
+                <!-- West Queue Card -->
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col justify-between">
+                    <div class="flex items-center justify-between text-xs text-slate-400 font-medium mb-1">
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-amber-500"></span> West Lane
+                        </span>
+                        <i data-lucide="arrow-right" class="w-3.5 h-3.5 text-slate-500"></i>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <span id="queueCountWest" class="text-xl font-extrabold font-mono text-white">0</span>
+                        <span class="text-xs text-slate-500">cars</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden mt-2">
+                        <div id="queueBarWest" class="bg-amber-500 h-full w-0 transition-all duration-300"></div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Right Column: Dashboard, Controllers & Analytics (5 cols) -->
+        <section class="lg:col-span-5 flex flex-col space-y-4">
+
+            <!-- Real-Time Analytical Metric Cards -->
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex items-center space-x-3">
+                    <div class="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg">
+                        <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs text-slate-400">Total Throughput</div>
+                        <div id="metricThroughput" class="text-xl font-bold font-mono text-white">0</div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex items-center space-x-3">
+                    <div class="p-2 bg-indigo-500/10 text-indigo-400 rounded-lg">
+                        <i data-lucide="clock" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs text-slate-400">Avg Wait Time</div>
+                        <div id="metricAvgWait" class="text-xl font-bold font-mono text-white">0.0s</div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex items-center space-x-3">
+                    <div class="p-2 bg-amber-500/10 text-amber-400 rounded-lg">
+                        <i data-lucide="layers" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs text-slate-400">Active Queue Total</div>
+                        <div id="metricTotalQueue" class="text-xl font-bold font-mono text-white">0</div>
+                    </div>
+                </div>
+
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 flex items-center space-x-3">
+                    <div class="p-2 bg-rose-500/10 text-rose-400 rounded-lg">
+                        <i data-lucide="trending-up" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs text-slate-400">Peak Queue Length</div>
+                        <div id="metricPeakQueue" class="text-xl font-bold font-mono text-white">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabbed Configuration Panel -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl flex-1 flex flex-col overflow-hidden">
+                
+                <!-- Tab Headers -->
+                <div class="flex border-b border-slate-800 bg-slate-950/40 text-xs font-medium">
+                    <button id="tabBtnControls" class="flex-1 py-3 px-4 text-indigo-400 border-b-2 border-indigo-500 font-semibold flex items-center justify-center space-x-2 transition">
+                        <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
+                        <span>Controls</span>
+                    </button>
+                    <button id="tabBtnAlgorithm" class="flex-1 py-3 px-4 text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center justify-center space-x-2 transition">
+                        <i data-lucide="brain-circuit" class="w-3.5 h-3.5"></i>
+                        <span>Algorithm</span>
+                    </button>
+                    <button id="tabBtnLogs" class="flex-1 py-3 px-4 text-slate-400 hover:text-slate-200 border-b-2 border-transparent flex items-center justify-center space-x-2 transition">
+                        <i data-lucide="terminal" class="w-3.5 h-3.5"></i>
+                        <span>Event Log</span>
+                    </button>
+                </div>
+
+                <!-- Tab Content Body -->
+                <div class="p-4 flex-1 overflow-y-auto space-y-5">
+
+                    <!-- TAB 1: CONTROLS & SPAWN RATES -->
+                    <div id="tabContentControls" class="space-y-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                            <span>Directional Traffic Generation Rates</span>
+                            <button id="btnBalanceTraffic" class="text-indigo-400 hover:underline text-[11px] normal-case font-normal">Reset to Equal</button>
+                        </h3>
+
+                        <!-- North Slider -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-xs font-medium">
+                                <span class="text-slate-300 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-500"></span> North Spawn Rate</span>
+                                <span id="valSpawnNorth" class="font-mono text-indigo-400">12 cars/min</span>
+                            </div>
+                            <input type="range" id="sliderSpawnNorth" min="0" max="40" value="12" class="w-full accent-indigo-500 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <!-- South Slider -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-xs font-medium">
+                                <span class="text-slate-300 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-teal-500"></span> South Spawn Rate</span>
+                                <span id="valSpawnSouth" class="font-mono text-indigo-400">12 cars/min</span>
+                            </div>
+                            <input type="range" id="sliderSpawnSouth" min="0" max="40" value="12" class="w-full accent-indigo-500 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <!-- East Slider -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-xs font-medium">
+                                <span class="text-slate-300 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-purple-500"></span> East Spawn Rate</span>
+                                <span id="valSpawnEast" class="font-mono text-indigo-400">18 cars/min</span>
+                            </div>
+                            <input type="range" id="sliderSpawnEast" min="0" max="40" value="18" class="w-full accent-indigo-500 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <!-- West Slider -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-xs font-medium">
+                                <span class="text-slate-300 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-500"></span> West Spawn Rate</span>
+                                <span id="valSpawnWest" class="font-mono text-indigo-400">18 cars/min</span>
+                            </div>
+                            <input type="range" id="sliderSpawnWest" min="0" max="40" value="18" class="w-full accent-indigo-500 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <hr class="border-slate-800 my-3">
+
+                        <!-- Phase Override Controls (Manual Phase Triggering) -->
+                        <div>
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Manual Signal Override</h3>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="btnOverrideNS" class="p-2.5 bg-slate-800 hover:bg-emerald-950/40 border border-slate-700 hover:border-emerald-500/50 rounded-xl text-xs font-medium text-slate-200 transition flex items-center justify-center space-x-2">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                    <span>Force N-S Green</span>
+                                </button>
+                                <button id="btnOverrideEW" class="p-2.5 bg-slate-800 hover:bg-emerald-950/40 border border-slate-700 hover:border-emerald-500/50 rounded-xl text-xs font-medium text-slate-200 transition flex items-center justify-center space-x-2">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                    <span>Force E-W Green</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: ALGORITHM & FSM SETTINGS -->
+                    <div id="tabContentAlgorithm" class="space-y-4 hidden">
+                        <div>
+                            <label class="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-2">Controller Operating Mode</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="btnModeAdaptive" class="p-3 bg-indigo-600/20 border border-indigo-500 text-indigo-300 rounded-xl text-xs font-semibold text-left transition flex flex-col justify-between">
+                                    <span class="flex items-center justify-between w-full">
+                                        Adaptive Queue
+                                        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                                    </span>
+                                    <span class="text-[10px] text-indigo-300/70 mt-1 font-normal">Dynamic signal extension based on live queue sizes</span>
+                                </button>
+
+                                <button id="btnModeFixed" class="p-3 bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold text-left transition flex flex-col justify-between">
+                                    <span class="flex items-center justify-between w-full">
+                                        Fixed Timer
+                                        <i data-lucide="timer" class="w-3.5 h-3.5"></i>
+                                    </span>
+                                    <span class="text-[10px] text-slate-500 mt-1 font-normal">Rigid cyclical timing intervals regardless of load</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <hr class="border-slate-800 my-2">
+
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Signal Timing Parameters</h3>
+
+                        <!-- Base Green Duration -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-xs font-medium">
+                                <span class="text-slate-300">Base Green Duration</span>
+                                <span id="valGreenDuration" class="font-mono text-indigo-400">8 sec</span>
+                            </div>
+                            <input type="range" id="sliderGreenDuration" min="3" max="25" value="8" class="w-full accent-indigo-500 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <!-- Yellow Duration -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-xs font-medium">
+                                <span class="text-slate-300">Yellow Light Duration</span>
+                                <span id="valYellowDuration" class="font-mono text-indigo-400">3 sec</span>
+                            </div>
+                            <input type="range" id="sliderYellowDuration" min="1" max="6" value="3" class="w-full accent-indigo-500 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+                        </div>
+
+                        <!-- Queue Sensitivity (For Adaptive Mode) -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-xs font-medium">
+                                <span class="text-slate-300">Adaptive Queue Threshold</span>
+                                <span id="valAdaptiveThreshold" class="font-mono text-indigo-400">4 vehicles</span>
+                            </div>
+                            <input type="range" id="sliderAdaptiveThreshold" min="2" max="12" value="4" class="w-full accent-indigo-500 bg-slate-800 h-1.5 rounded-lg appearance-none cursor-pointer">
+                            <p class="text-[11px] text-slate-500">Extends green phase up to +10s if waiting vehicles exceed this limit.</p>
+                        </div>
+                    </div>
+
+                    <!-- TAB 3: EVENT LOG -->
+                    <div id="tabContentLogs" class="space-y-3 hidden flex flex-col h-full">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="font-bold text-slate-400 uppercase tracking-wider">Queue & Phase Activity Feed</span>
+                            <button id="btnClearLogs" class="text-slate-500 hover:text-slate-300 text-[11px]">Clear</button>
+                        </div>
+
+                        <!-- Log Filters -->
+                        <div class="flex space-x-1.5 text-[11px] font-mono">
+                            <button class="log-filter px-2 py-0.5 rounded bg-indigo-600 text-white" data-filter="ALL">All</button>
+                            <button class="log-filter px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white" data-filter="QUEUE">Queue</button>
+                            <button class="log-filter px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white" data-filter="PHASE">Phase</button>
+                            <button class="log-filter px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white" data-filter="EMERGENCY">Emergency</button>
+                        </div>
+
+                        <!-- Scrollable Log Box -->
+                        <div id="logContainer" class="flex-1 bg-slate-950/80 border border-slate-800 rounded-xl p-3 font-mono text-xs space-y-2 h-48 overflow-y-auto max-h-64">
+                            <div class="text-slate-500 text-[11px] italic">[00:00:00] Simulation initialized. Standard FIFO queues bound.</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Modal Dialog: Architecture & Queue Info -->
+    <div id="infoModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5">
+            <div class="flex justify-between items-start border-b border-slate-800 pb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i data-lucide="layers" class="w-5 h-5 text-indigo-400"></i>
+                        Data Structures & Algorithmic Design
+                    </h2>
+                    <p class="text-xs text-slate-400">How FIFO queues power signal optimization in this simulation</p>
+                </div>
+                <button id="btnCloseModal" class="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4 text-xs text-slate-300 leading-relaxed max-h-[60vh] overflow-y-auto pr-2">
+                <div class="bg-slate-850 p-3.5 rounded-xl border border-slate-800">
+                    <h3 class="font-bold text-indigo-400 text-sm mb-1">1. Custom FIFO Queue (`TrafficQueue`)</h3>
+                    <p>Each directional approach (North, South, East, West) operates an isolated First-In, First-Out Queue data structure. Vehicles enqueue upon reaching the deceleration zone and dequeue sequentially only when the corresponding directional light is <span class="text-emerald-400 font-semibold">Green</span>.</p>
+                </div>
+
+                <div class="bg-slate-850 p-3.5 rounded-xl border border-slate-800">
+                    <h3 class="font-bold text-emerald-400 text-sm mb-1">2. Adaptive Queue-Aware Optimization Algorithm</h3>
+                    <p>Unlike standard fixed-timer controllers, the Adaptive Controller continuously evaluates queue lengths: <code class="font-mono text-slate-200">Length(N) + Length(S)</code> vs <code class="font-mono text-slate-200">Length(E) + Length(W)</code>. If the pending queue depth exceeds the threshold during an active phase, the controller dynamically grants bonus green time to drain congestion before cycling.</p>
+                </div>
+
+                <div class="bg-slate-850 p-3.5 rounded-xl border border-slate-800">
+                    <h3 class="font-bold text-rose-400 text-sm mb-1">3. Emergency Vehicle Priority Interrupt</h3>
+                    <p>When an emergency vehicle is dispatched, it injects directly into the queue head. The Finite State Machine (FSM) instantly triggers a rapid yellow warning on conflicting axes and immediately activates an emergency green hallway for the priority vehicle.</p>
+                </div>
+            </div>
+
+            <div class="pt-2 flex justify-end">
+                <button id="btnCloseModalBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-xl transition">
+                    Got it
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application JavaScript -->
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // =========================================================================
+        // 1. DATA STRUCTURE: Custom FIFO Queue Implementation
+        // =========================================================================
+        class TrafficQueue {
+            constructor(direction) {
+                this.direction = direction;
+                this.items = [];
+            }
+
+            // Enqueue: Push vehicle to back of queue
+            enqueue(vehicle) {
+                this.items.push(vehicle);
+            }
+
+            // Dequeue: Remove vehicle from front of queue
+            dequeue() {
+                if (this.isEmpty()) return null;
+                return this.items.shift();
+            }
+
+            // Peek at front vehicle
+            peek() {
+                if (this.isEmpty()) return null;
+                return this.items[0];
+            }
+
+            isEmpty() {
+                return this.items.length === 0;
+            }
+
+            size() {
+                return this.items.length;
+            }
+
+            toArray() {
+                return [...this.items];
+            }
+
+            clear() {
+                this.items = [];
+            }
+
+            // Metric: Calculate cumulative wait time of currently queued items
+            getAverageWaitTime(currentTime) {
+                if (this.isEmpty()) return 0;
+                let totalWait = 0;
+                for (let v of this.items) {
+                    if (v.stopped) {
+                        totalWait += (currentTime - v.stoppedTime);
+                    }
+                }
+                return totalWait / this.items.length;
+            }
+        }
+
+        // =========================================================================
+        // 2. DATA MODELS: Vehicle Definition
+        // =========================================================================
+        let vehicleIdCounter = 1;
+        const VEHICLE_COLORS = ['#3b82f6', '#06b6d4', '#a855f7', '#f59e0b', '#ec4899', '#10b981'];
+
+        class Vehicle {
+            constructor(direction, isEmergency = false) {
+                this.id = vehicleIdCounter++;
+                this.direction = direction; // 'N', 'S', 'E', 'W'
+                this.isEmergency = isEmergency;
+                this.color = isEmergency ? '#ef4444' : VEHICLE_COLORS[Math.floor(Math.random() * VEHICLE_COLORS.length)];
+                
+                this.length = isEmergency ? 26 : 20;
+                this.width = 12;
+                
+                this.speed = 0;
+                this.maxSpeed = isEmergency ? 3.5 : 2.2;
+                this.acceleration = 0.08;
+                this.deceleration = 0.15;
+
+                this.spawnTime = performance.now() / 1000;
+                this.stoppedTime = 0;
+                this.stopped = false;
+                this.hasCrossed = false;
+                this.totalWaitDuration = 0;
+
+                // Set initial position based on lane direction
+                this.initPosition();
+            }
+
+            initPosition() {
+                // Direction vectors: N->S, S->N, E->W, W->E
+                switch(this.direction) {
+                    case 'N': // Moving downwards (+y)
+                        this.x = 285; // Left lane of center 600 width canvas
+                        this.y = -30;
+                        break;
+                    case 'S': // Moving upwards (-y)
+                        this.x = 315;
+                        this.y = 630;
+                        break;
+                    case 'E': // Moving leftwards (-x)
+                        this.x = 630;
+                        this.y = 285;
+                        break;
+                    case 'W': // Moving rightwards (+x)
+                        this.x = -30;
+                        this.y = 315;
+                        break;
+                }
+            }
+
+            getStopLineDistance(stopLines) {
+                switch(this.direction) {
+                    case 'N': return stopLines.N - (this.y + this.length / 2);
+                    case 'S': return (this.y - this.length / 2) - stopLines.S;
+                    case 'E': return (this.x - this.length / 2) - stopLines.E;
+                    case 'W': return stopLines.W - (this.x + this.length / 2);
+                }
+            }
+        }
+
+        // =========================================================================
+        // 3. SIMULATION ENGINE & STATE CONTROL
+        // =========================================================================
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Internal resolution of Canvas
+        canvas.width = 600;
+        canvas.height = 600;
+
+        // Stop Lines Definition (Pixels)
+        const STOP_LINES = {
+            N: 220, // North stop line Y
+            S: 380, // South stop line Y
+            E: 380, // East stop line X
+            W: 220  // West stop line X
+        };
+
+        // FSM Traffic Light States
+        const LIGHT_STATES = {
+            NS_GREEN: 'NS_GREEN',
+            NS_YELLOW: 'NS_YELLOW',
+            EW_GREEN: 'EW_GREEN',
+            EW_YELLOW: 'EW_YELLOW',
+            EMERGENCY: 'EMERGENCY'
+        };
+
+        class SimulationEngine {
+            constructor() {
+                // Initialize directional Queues
+                this.queues = {
+                    N: new TrafficQueue('N'),
+                    S: new TrafficQueue('S'),
+                    E: new TrafficQueue('E'),
+                    W: new TrafficQueue('W')
+                };
+
+                // Array of all vehicles currently active in canvas
+                this.activeVehicles = [];
+
+                // Simulation Parameters
+                this.isRunning = true;
+                this.speedMultiplier = 1.0;
+                this.lastTime = performance.now();
+                this.simTime = 0; // In seconds
+
+                // Metrics
+                this.totalThroughput = 0;
+                this.totalWaitTimeAcc = 0;
+                this.peakQueueLength = 0;
+
+                // FSM Phase Controller State
+                this.mode = 'ADAPTIVE'; // 'ADAPTIVE', 'FIXED'
+                this.currentState = LIGHT_STATES.NS_GREEN;
+                this.phaseTimer = 0;
+                this.greenDuration = 8;
+                this.yellowDuration = 3;
+                this.adaptiveThreshold = 4;
+                this.extendedGreenTime = 0;
+
+                // Directional Spawn Rates (cars per minute)
+                this.spawnRates = { N: 12, S: 12, E: 18, W: 18 };
+                this.spawnAccumulator = { N: 0, S: 0, E: 0, W: 0 };
+
+                // Emergency Control
+                this.emergencyQueue = null;
+
+                // Event Logs Array
+                this.logs = [];
+
+                this.logEvent('PHASE', 'System initialized. Initial phase: N-S Green.');
+            }
+
+            logEvent(category, message) {
+                const timestamp = new Date().toISOString().substr(11, 8);
+                const logEntry = { timestamp, category, message };
+                this.logs.unshift(logEntry);
+                if (this.logs.length > 100) this.logs.pop();
+
+                // UI update
+                updateLogUI(logEntry);
+            }
+
+            // Spawn random vehicle based on per-minute probability
+            handleSpawns(dt) {
+                const directions = ['N', 'S', 'E', 'W'];
+                for (let dir of directions) {
+                    const rate = this.spawnRates[dir]; // cars per min
+                    if (rate <= 0) continue;
+
+                    const probPerSec = rate / 60;
+                    this.spawnAccumulator[dir] += probPerSec * dt;
+
+                    if (this.spawnAccumulator[dir] >= 1) {
+                        // Check distance to last spawned vehicle in lane to prevent clipping
+                        const laneVehicles = this.activeVehicles.filter(v => v.direction === dir && !v.hasCrossed);
+                        let safeToSpawn = true;
+
+                        if (laneVehicles.length > 0) {
+                            const lastVehicle = laneVehicles[laneVehicles.length - 1];
+                            let dist = 0;
+                            if (dir === 'N') dist = lastVehicle.y - (-30);
+                            if (dir === 'S') dist = 630 - lastVehicle.y;
+                            if (dir === 'E') dist = 630 - lastVehicle.x;
+                            if (dir === 'W') dist = lastVehicle.x - (-30);
+
+                            if (dist < 45) safeToSpawn = false;
+                        }
+
+                        if (safeToSpawn) {
+                            const vehicle = new Vehicle(dir);
+                            this.activeVehicles.push(vehicle);
+                            this.queues[dir].enqueue(vehicle);
+                            this.spawnAccumulator[dir] -= 1;
+
+                            this.logEvent('QUEUE', `Vehicle #${vehicle.id} enqueued in ${getDirName(dir)} Lane.`);
+                        }
+                    }
+                }
+            }
+
+            dispatchEmergency() {
+                // Randomly pick a direction for emergency vehicle
+                const dirs = ['N', 'S', 'E', 'W'];
+                const dir = dirs[Math.floor(Math.random() * dirs.length)];
+                
+                const ambulance = new Vehicle(dir, true);
+                this.activeVehicles.push(ambulance);
+                
+                // Priority Enqueue at index 0
+                this.queues[dir].items.unshift(ambulance);
+                
+                this.emergencyQueue = dir;
+                this.currentState = LIGHT_STATES.EMERGENCY;
+                this.phaseTimer = 0;
+
+                this.logEvent('EMERGENCY', `EMERGENCY DISPATCH: Priority Ambulance in ${getDirName(dir)} Lane! Switching signals immediately.`);
+            }
+
+            // Traffic Light State Machine Update Logic
+            updateFSM(dt) {
+                this.phaseTimer += dt;
+
+                // Emergency Priority Mode Override
+                if (this.currentState === LIGHT_STATES.EMERGENCY) {
+                    if (this.phaseTimer > 10) { // Emergency duration window
+                        this.currentState = LIGHT_STATES.NS_GREEN;
+                        this.phaseTimer = 0;
+                        this.emergencyQueue = null;
+                        this.logEvent('PHASE', 'Emergency cleared. Resuming standard signal cycle.');
+                    }
+                    return;
+                }
+
+                const nsQueue = this.queues.N.size() + this.queues.S.size();
+                const ewQueue = this.queues.E.size() + this.queues.W.size();
+
+                switch (this.currentState) {
+                    case LIGHT_STATES.NS_GREEN:
+                        let currentNSLimit = this.greenDuration;
+
+                        // Adaptive Queue Logic: Extend Green Phase if queue exceeds threshold
+                        if (this.mode === 'ADAPTIVE' && nsQueue >= this.adaptiveThreshold && nsQueue > ewQueue) {
+                            currentNSLimit += 5; // Grant 5s extension
+                            if (this.extendedGreenTime === 0) {
+                                this.extendedGreenTime = 5;
+                                this.logEvent('PHASE', `Adaptive Control: Heavy N-S Queue (${nsQueue} cars). Green light extended +5s.`);
+                            }
+                        }
+
+                        if (this.phaseTimer >= currentNSLimit) {
+                            this.currentState = LIGHT_STATES.NS_YELLOW;
+                            this.phaseTimer = 0;
+                            this.extendedGreenTime = 0;
+                            this.logEvent('PHASE', 'Signal Change: N-S switching to Yellow.');
+                        }
+                        break;
+
+                    case LIGHT_STATES.NS_YELLOW:
+                        if (this.phaseTimer >= this.yellowDuration) {
+                            this.currentState = LIGHT_STATES.EW_GREEN;
+                            this.phaseTimer = 0;
+                            this.logEvent('PHASE', 'Signal Change: E-W Axis active Green.');
+                        }
+                        break;
+
+                    case LIGHT_STATES.EW_GREEN:
+                        let currentEWLimit = this.greenDuration;
+
+                        if (this.mode === 'ADAPTIVE' && ewQueue >= this.adaptiveThreshold && ewQueue > nsQueue) {
+                            currentEWLimit += 5;
+                            if (this.extendedGreenTime === 0) {
+                                this.extendedGreenTime = 5;
+                                this.logEvent('PHASE', `Adaptive Control: Heavy E-W Queue (${ewQueue} cars). Green light extended +5s.`);
+                            }
+                        }
+
+                        if (this.phaseTimer >= currentEWLimit) {
+                            this.currentState = LIGHT_STATES.EW_YELLOW;
+                            this.phaseTimer = 0;
+                            this.extendedGreenTime = 0;
+                            this.logEvent('PHASE', 'Signal Change: E-W switching to Yellow.');
+                        }
+                        break;
+
+                    case LIGHT_STATES.EW_YELLOW:
+                        if (this.phaseTimer >= this.yellowDuration) {
+                            this.currentState = LIGHT_STATES.NS_GREEN;
+                            this.phaseTimer = 0;
+                            this.logEvent('PHASE', 'Signal Change: N-S Axis active Green.');
+                        }
+                        break;
+                }
+            }
+
+            // Physics, Dequeue, and Vehicle Spacing Logic
+            updatePhysics(dt) {
+                const currentSimSec = performance.now() / 1000;
+
+                // Sort vehicles along lanes for collision avoidance
+                for (let i = 0; i < this.activeVehicles.length; i++) {
+                    const v = this.activeVehicles[i];
+                    const lightState = this.getLightStateForDirection(v.direction);
+
+                    // Check vehicle ahead in same lane
+                    let vehicleAhead = null;
+                    let minDist = Infinity;
+
+                    for (let j = 0; j < this.activeVehicles.length; j++) {
+                        if (i === j) continue;
+                        const other = this.activeVehicles[j];
+                        if (other.direction === v.direction && !other.hasCrossed) {
+                            let gap = Infinity;
+                            if (v.direction === 'N' && other.y > v.y) gap = other.y - v.y;
+                            if (v.direction === 'S' && other.y < v.y) gap = v.y - other.y;
+                            if (v.direction === 'E' && other.x < v.x) gap = v.x - other.x;
+                            if (v.direction === 'W' && other.x > v.x) gap = other.x - v.x;
+
+                            if (gap > 0 && gap < minDist) {
+                                minDist = gap;
+                                vehicleAhead = other;
+                            }
+                        }
+                    }
+
+                    // Calculate distance to stop line
+                    const distToStopLine = v.getStopLineDistance(STOP_LINES);
+                    const isFrontOfQueue = (this.queues[v.direction].peek() === v);
+
+                    let shouldStop = false;
+
+                    // Stop line rule: Stop if Red/Yellow and vehicle is before stop line
+                    if (!v.hasCrossed) {
+                        if (lightState === 'RED') {
+                            if (distToStopLine > 0 && distToStopLine < 120) {
+                                shouldStop = true;
+                            }
+                        } else if (lightState === 'YELLOW') {
+                            // If close enough to yellow light, commit and proceed; otherwise stop safely
+                            if (distToStopLine > 15 && distToStopLine < 100) {
+                                shouldStop = true;
+                            }
+                        }
+                    }
+
+                    // Maintain safe distance behind car ahead
+                    const SAFE_DISTANCE = 32;
+                    if (vehicleAhead && minDist < SAFE_DISTANCE) {
+                        shouldStop = true;
+                    }
+
+                    // Acceleration / Deceleration logic
+                    if (shouldStop) {
+                        v.speed = Math.max(0, v.speed - v.deceleration * dt * 60);
+                        if (v.speed === 0 && !v.stopped) {
+                            v.stopped = true;
+                            v.stoppedTime = currentSimSec;
+                        }
+                    } else {
+                        v.speed = Math.min(v.maxSpeed, v.speed + v.acceleration * dt * 60);
+                        if (v.stopped) {
+                            v.stopped = false;
+                            v.totalWaitDuration += (currentSimSec - v.stoppedTime);
+                        }
+                    }
+
+                    // Move vehicle along its trajectory
+                    switch(v.direction) {
+                        case 'N': v.y += v.speed * dt * 60; break;
+                        case 'S': v.y -= v.speed * dt * 60; break;
+                        case 'E': v.x -= v.speed * dt * 60; break;
+                        case 'W': v.x += v.speed * dt * 60; break;
+                    }
+
+                    // Check if vehicle crossed stop line -> Queue Dequeue Operation
+                    if (!v.hasCrossed && distToStopLine < -10) {
+                        v.hasCrossed = true;
+                        
+                        // Dequeue from queue model if present
+                        if (isFrontOfQueue) {
+                            const dequeued = this.queues[v.direction].dequeue();
+                            if (dequeued) {
+                                this.totalThroughput++;
+                                this.totalWaitTimeAcc += dequeued.totalWaitDuration;
+                                this.logEvent('QUEUE', `Vehicle #${dequeued.id} dequeued & crossed ${getDirName(v.direction)} intersection.`);
+                            }
+                        }
+                    }
+                }
+
+                // Despawn off-screen vehicles
+                this.activeVehicles = this.activeVehicles.filter(v => {
+                    const margin = 50;
+                    return (v.x >= -margin && v.x <= canvas.width + margin &&
+                            v.y >= -margin && v.y <= canvas.height + margin);
+                });
+
+                // Update Peak Queue Metric
+                const currentTotalQueue = this.getTotalQueueSize();
+                if (currentTotalQueue > this.peakQueueLength) {
+                    this.peakQueueLength = currentTotalQueue;
+                }
+            }
+
+            getLightStateForDirection(dir) {
+                if (this.currentState === LIGHT_STATES.EMERGENCY) {
+                    return (this.emergencyQueue === dir) ? 'GREEN' : 'RED';
+                }
+
+                if (dir === 'N' || dir === 'S') {
+                    if (this.currentState === LIGHT_STATES.NS_GREEN) return 'GREEN';
+                    if (this.currentState === LIGHT_STATES.NS_YELLOW) return 'YELLOW';
+                    return 'RED';
+                } else {
+                    if (this.currentState === LIGHT_STATES.EW_GREEN) return 'GREEN';
+                    if (this.currentState === LIGHT_STATES.EW_YELLOW) return 'YELLOW';
+                    return 'RED';
+                }
+            }
+
+            getTotalQueueSize() {
+                return this.queues.N.size() + this.queues.S.size() + 
+                       this.queues.E.size() + this.queues.W.size();
+            }
+
+            step(dt) {
+                const scaledDt = dt * this.speedMultiplier;
+                this.simTime += scaledDt;
+                this.handleSpawns(scaledDt);
+                this.updateFSM(scaledDt);
+                this.updatePhysics(scaledDt);
+            }
+
+            reset() {
+                this.queues.N.clear();
+                this.queues.S.clear();
+                this.queues.E.clear();
+                this.queues.W.clear();
+                this.activeVehicles = [];
+                this.totalThroughput = 0;
+                this.totalWaitTimeAcc = 0;
+                this.peakQueueLength = 0;
+                this.simTime = 0;
+                this.currentState = LIGHT_STATES.NS_GREEN;
+                this.phaseTimer = 0;
+                this.logEvent('PHASE', 'Simulation reset to default state.');
+            }
+        }
+
+        // =========================================================================
+        // 4. RENDERER (HTML5 CANVAS DRAWING)
+        // =========================================================================
+        class CanvasRenderer {
+            constructor(canvas, ctx, sim) {
+                this.canvas = canvas;
+                this.ctx = ctx;
+                this.sim = sim;
+            }
+
+            drawRoads() {
+                const w = this.canvas.width;
+                const h = this.canvas.height;
+                const roadWidth = 120;
+                const cx = w / 2;
+                const cy = h / 2;
+
+                // Background Grass/Ground
+                this.ctx.fillStyle = '#0f172a';
+                this.ctx.fillRect(0, 0, w, h);
+
+                // Asphalt Roads
+                this.ctx.fillStyle = '#1e293b';
+                // Vertical Road
+                this.ctx.fillRect(cx - roadWidth/2, 0, roadWidth, h);
+                // Horizontal Road
+                this.ctx.fillRect(0, cy - roadWidth/2, w, roadWidth);
+
+                // Intersection Center Block
+                this.ctx.fillStyle = '#334155';
+                this.ctx.fillRect(cx - roadWidth/2, cy - roadWidth/2, roadWidth, roadWidth);
+
+                // Dashed Center Markings
+                this.ctx.strokeStyle = '#64748b';
+                this.ctx.lineWidth = 2;
+                this.ctx.setLineDash([12, 12]);
+
+                // N & S Lane Divider
+                this.ctx.beginPath();
+                this.ctx.moveTo(cx, 0); this.ctx.lineTo(cx, cy - roadWidth/2);
+                this.ctx.moveTo(cx, cy + roadWidth/2); this.ctx.lineTo(cx, h);
+                // E & W Lane Divider
+                this.ctx.moveTo(0, cy); this.ctx.lineTo(cx - roadWidth/2, cy);
+                this.ctx.moveTo(cx + roadWidth/2, cy); this.ctx.lineTo(w, cy);
+                this.ctx.stroke();
+                this.ctx.setLineDash([]); // Reset dash
+
+                // Solid White Stop Lines
+                this.ctx.strokeStyle = '#f8fafc';
+                this.ctx.lineWidth = 4;
+
+                // North Stop Line
+                this.ctx.beginPath();
+                this.ctx.moveTo(cx - roadWidth/2, STOP_LINES.N);
+                this.ctx.lineTo(cx, STOP_LINES.N);
+                this.ctx.stroke();
+
+                // South Stop Line
+                this.ctx.beginPath();
+                this.ctx.moveTo(cx, STOP_LINES.S);
+                this.ctx.lineTo(cx + roadWidth/2, STOP_LINES.S);
+                this.ctx.stroke();
+
+                // East Stop Line
+                this.ctx.beginPath();
+                this.ctx.moveTo(STOP_LINES.E, cy - roadWidth/2);
+                this.ctx.lineTo(STOP_LINES.E, cy);
+                this.ctx.stroke();
+
+                // West Stop Line
+                this.ctx.beginPath();
+                this.ctx.moveTo(STOP_LINES.W, cy);
+                this.ctx.lineTo(STOP_LINES.W, cy + roadWidth/2);
+                this.ctx.stroke();
+
+                // Crosswalk Zebra Pattern Lines
+                this.drawCrosswalk(cx - roadWidth/2, STOP_LINES.N - 25, roadWidth, 18, true);
+                this.drawCrosswalk(cx - roadWidth/2, STOP_LINES.S + 7, roadWidth, 18, true);
+                this.drawCrosswalk(STOP_LINES.W - 25, cy - roadWidth/2, 18, roadWidth, false);
+                this.drawCrosswalk(STOP_LINES.E + 7, cy - roadWidth/2, 18, roadWidth, false);
+            }
+
+            drawCrosswalk(x, y, width, height, isHorizontal) {
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+                const stripes = 5;
+                if (isHorizontal) {
+                    const stripeW = width / (stripes * 2 - 1);
+                    for (let i = 0; i < stripes; i++) {
+                        this.ctx.fillRect(x + i * stripeW * 2, y, stripeW, height);
+                    }
+                } else {
+                    const stripeH = height / (stripes * 2 - 1);
+                    for (let i = 0; i < stripes; i++) {
+                        this.ctx.fillRect(x, y + i * stripeH * 2, width, stripeH);
+                    }
+                }
+            }
+
+            drawTrafficLights() {
+                const cx = this.canvas.width / 2;
+                const cy = this.canvas.height / 2;
+                const offset = 75;
+
+                // Light Positions
+                const lights = [
+                    { dir: 'N', x: cx - offset, y: cy - offset },
+                    { dir: 'S', x: cx + offset, y: cy + offset },
+                    { dir: 'E', x: cx + offset, y: cy - offset },
+                    { dir: 'W', x: cx - offset, y: cy + offset }
+                ];
+
+                for (let l of lights) {
+                    const state = this.sim.getLightStateForDirection(l.dir);
+                    
+                    // Box background
+                    this.ctx.fillStyle = '#0f172a';
+                    this.ctx.strokeStyle = '#334155';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.roundRect(l.x - 14, l.y - 14, 28, 28, 6);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+
+                    // Glow effect
+                    let color = '#ef4444'; // Red
+                    if (state === 'GREEN') color = '#22c55e';
+                    if (state === 'YELLOW') color = '#eab308';
+
+                    this.ctx.shadowColor = color;
+                    this.ctx.shadowBlur = 12;
+                    this.ctx.fillStyle = color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(l.x, l.y, 8, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    // Reset shadow
+                    this.ctx.shadowBlur = 0;
+                }
+            }
+
+            drawVehicles() {
+                for (let v of this.sim.activeVehicles) {
+                    this.ctx.save();
+                    this.ctx.translate(v.x, v.y);
+
+                    // Rotate depending on direction vector
+                    let angle = 0;
+                    if (v.direction === 'N') angle = Math.PI / 2;
+                    if (v.direction === 'S') angle = -Math.PI / 2;
+                    if (v.direction === 'E') angle = Math.PI;
+                    if (v.direction === 'W') angle = 0;
+
+                    this.ctx.rotate(angle);
+
+                    // Emergency Vehicle Flashers
+                    if (v.isEmergency) {
+                        const flash = Math.floor(performance.now() / 150) % 2 === 0;
+                        this.ctx.shadowColor = flash ? '#3b82f6' : '#ef4444';
+                        this.ctx.shadowBlur = 15;
+                    }
+
+                    // Body
+                    this.ctx.fillStyle = v.color;
+                    this.ctx.beginPath();
+                    this.ctx.roundRect(-v.length/2, -v.width/2, v.length, v.width, 4);
+                    this.ctx.fill();
+
+                    // Windshield / Cabin Overlay
+                    this.ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
+                    this.ctx.fillRect(-v.length/6, -v.width/2 + 2, v.length/3, v.width - 4);
+
+                    // Brake Lights (if stopped or braking)
+                    if (v.speed < 0.2) {
+                        this.ctx.fillStyle = '#f87171';
+                        this.ctx.fillRect(-v.length/2, -v.width/2 + 1, 2, 3);
+                        this.ctx.fillRect(-v.length/2, v.width/2 - 4, 2, 3);
+                    }
+
+                    this.ctx.restore();
+                }
+            }
+
+            drawQueueOverlays() {
+                // Render waiting car counters floating near stop lines
+                const queueCounts = [
+                    { count: this.sim.queues.N.size(), x: 265, y: STOP_LINES.N - 30 },
+                    { count: this.sim.queues.S.size(), x: 335, y: STOP_LINES.S + 30 },
+                    { count: this.sim.queues.E.size(), x: STOP_LINES.E + 30, y: 265 },
+                    { count: this.sim.queues.W.size(), x: STOP_LINES.W - 30, y: 335 }
+                ];
+
+                for (let q of queueCounts) {
+                    if (q.count === 0) continue;
+                    
+                    this.ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                    this.ctx.strokeStyle = '#6366f1';
+                    this.ctx.lineWidth = 1.5;
+                    this.ctx.beginPath();
+                    this.ctx.roundRect(q.x - 12, q.y - 10, 24, 20, 6);
+                    this.ctx.fill();
+                    this.ctx.stroke();
+
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.font = 'bold 11px JetBrains Mono, monospace';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.textBaseline = 'middle';
+                    this.ctx.fillText(q.count, q.x, q.y);
+                }
+            }
+
+            render() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.drawRoads();
+                this.drawTrafficLights();
+                this.drawVehicles();
+                this.drawQueueOverlays();
+            }
+        }
+
+        // Helper
+        function getDirName(dir) {
+            switch(dir) {
+                case 'N': return 'North';
+                case 'S': return 'South';
+                case 'E': return 'East';
+                case 'W': return 'West';
+            }
+        }
+
+        // =========================================================================
+        // 5. APPLICATION INITIALIZATION & UI BINDINGS
+        // =========================================================================
+        const sim = new SimulationEngine();
+        const renderer = new CanvasRenderer(canvas, ctx, sim);
+
+        // Frame Loop variables
+        let lastFrameTimestamp = performance.now();
+        let frameCount = 0;
+        let fpsTimer = performance.now();
+
+        function gameLoop(timestamp) {
+            const dt = Math.min((timestamp - lastFrameTimestamp) / 1000, 0.1); // Cap dt
+            lastFrameTimestamp = timestamp;
+
+            // FPS calculation
+            frameCount++;
+            if (timestamp - fpsTimer >= 1000) {
+                document.getElementById('fpsCounter').textContent = frameCount;
+                frameCount = 0;
+                fpsTimer = timestamp;
+            }
+
+            // Step & Render
+            if (sim.isRunning) {
+                sim.step(dt);
+            }
+            renderer.render();
+
+            // Update UI Counters & Indicators
+            updateUI();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Update Dashboard Cards & Queue Bars
+        function updateUI() {
+            // Clock
+            const mins = Math.floor(sim.simTime / 60).toString().padStart(2, '0');
+            const secs = Math.floor(sim.simTime % 60).toString().padStart(2, '0');
+            document.getElementById('simTimeDisplay').textContent = `${mins}:${secs}`;
+
+            // Metric Cards
+            document.getElementById('metricThroughput').textContent = sim.totalThroughput;
+            
+            const avgWait = sim.totalThroughput > 0 ? (sim.totalWaitTimeAcc / sim.totalThroughput).toFixed(1) : '0.0';
+            document.getElementById('metricAvgWait').textContent = `${avgWait}s`;
+            
+            const totalQ = sim.getTotalQueueSize();
+            document.getElementById('metricTotalQueue').textContent = totalQ;
+            document.getElementById('metricPeakQueue').textContent = sim.peakQueueLength;
+
+            // Queue Indicators per direction
+            const qN = sim.queues.N.size();
+            const qS = sim.queues.S.size();
+            const qE = sim.queues.E.size();
+            const qW = sim.queues.W.size();
+
+            document.getElementById('queueCountNorth').textContent = qN;
+            document.getElementById('queueCountSouth').textContent = qS;
+            document.getElementById('queueCountEast').textContent = qE;
+            document.getElementById('queueCountWest').textContent = qW;
+
+            // Queue progress bars (Max 15 cars visually)
+            document.getElementById('queueBarNorth').style.width = `${Math.min(100, (qN / 15) * 100)}%`;
+            document.getElementById('queueBarSouth').style.width = `${Math.min(100, (qS / 15) * 100)}%`;
+            document.getElementById('queueBarEast').style.width = `${Math.min(100, (qE / 15) * 100)}%`;
+            document.getElementById('queueBarWest').style.width = `${Math.min(100, (qW / 15) * 100)}%`;
+
+            // Phase Badges
+            document.getElementById('modeBadgeText').textContent = sim.mode === 'ADAPTIVE' ? 'Adaptive Queue Mode' : 'Fixed Timing Mode';
+            
+            let phaseStr = 'N-S Green';
+            if (sim.currentState === LIGHT_STATES.NS_YELLOW) phaseStr = 'N-S Yellow';
+            if (sim.currentState === LIGHT_STATES.EW_GREEN) phaseStr = 'E-W Green';
+            if (sim.currentState === LIGHT_STATES.EW_YELLOW) phaseStr = 'E-W Yellow';
+            if (sim.currentState === LIGHT_STATES.EMERGENCY) phaseStr = 'Emergency Priority!';
+
+            document.getElementById('phaseBadgeText').textContent = `Phase: ${phaseStr}`;
+        }
+
+        // Add Log item to UI
+        function updateLogUI(entry) {
+            const container = document.getElementById('logContainer');
+            const item = document.createElement('div');
+            
+            let catColor = 'text-indigo-400';
+            if (entry.category === 'PHASE') catColor = 'text-emerald-400';
+            if (entry.category === 'EMERGENCY') catColor = 'text-rose-400 font-bold';
+
+            item.className = 'log-item text-[11px] leading-tight';
+            item.dataset.category = entry.category;
+            item.innerHTML = `<span class="text-slate-500">[${entry.timestamp}]</span> <span class="${catColor}">[${entry.category}]</span> ${entry.message}`;
+
+            container.insertBefore(item, container.firstChild);
+        }
+
+        // =========================================================================
+        // 6. EVENT LISTENERS & UI INTERACTION HANDLERS
+        // =========================================================================
+
+        // Play/Pause
+        document.getElementById('btnPlayPause').addEventListener('click', () => {
+            sim.isRunning = !sim.isRunning;
+            const icon = document.getElementById('playIcon');
+            if (sim.isRunning) {
+                icon.setAttribute('data-lucide', 'pause');
+            } else {
+                icon.setAttribute('data-lucide', 'play');
+            }
+            lucide.createIcons();
+        });
+
+        // Step 1 Frame
+        document.getElementById('btnStep').addEventListener('click', () => {
+            sim.isRunning = false;
+            document.getElementById('playIcon').setAttribute('data-lucide', 'play');
+            lucide.createIcons();
+            sim.step(0.05);
+            renderer.render();
+            updateUI();
+        });
+
+        // Reset
+        document.getElementById('btnReset').addEventListener('click', () => {
+            sim.reset();
+        });
+
+        // Speed Buttons
+        document.querySelectorAll('.speed-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.speed-btn').forEach(b => {
+                    b.classList.remove('bg-indigo-600', 'text-white', 'font-bold');
+                    b.classList.add('text-slate-400');
+                });
+                e.target.classList.add('bg-indigo-600', 'text-white', 'font-bold');
+                e.target.classList.remove('text-slate-400');
+                sim.speedMultiplier = parseFloat(e.target.dataset.speed);
+            });
+        });
+
+        // Directional Spawn Sliders
+        const sliderN = document.getElementById('sliderSpawnNorth');
+        const sliderS = document.getElementById('sliderSpawnSouth');
+        const sliderE = document.getElementById('sliderSpawnEast');
+        const sliderW = document.getElementById('sliderSpawnWest');
+
+        sliderN.addEventListener('input', (e) => {
+            sim.spawnRates.N = parseInt(e.target.value);
+            document.getElementById('valSpawnNorth').textContent = `${e.target.value} cars/min`;
+        });
+        sliderS.addEventListener('input', (e) => {
+            sim.spawnRates.S = parseInt(e.target.value);
+            document.getElementById('valSpawnSouth').textContent = `${e.target.value} cars/min`;
+        });
+        sliderE.addEventListener('input', (e) => {
+            sim.spawnRates.E = parseInt(e.target.value);
+            document.getElementById('valSpawnEast').textContent = `${e.target.value} cars/min`;
+        });
+        sliderW.addEventListener('input', (e) => {
+            sim.spawnRates.W = parseInt(e.target.value);
+            document.getElementById('valSpawnWest').textContent = `${e.target.value} cars/min`;
+        });
+
+        document.getElementById('btnBalanceTraffic').addEventListener('click', () => {
+            sliderN.value = sliderS.value = sliderE.value = sliderW.value = 15;
+            sim.spawnRates = { N: 15, S: 15, E: 15, W: 15 };
+            document.getElementById('valSpawnNorth').textContent = '15 cars/min';
+            document.getElementById('valSpawnSouth').textContent = '15 cars/min';
+            document.getElementById('valSpawnEast').textContent = '15 cars/min';
+            document.getElementById('valSpawnWest').textContent = '15 cars/min';
+        });
+
+        // Manual Phase Overrides
+        document.getElementById('btnOverrideNS').addEventListener('click', () => {
+            sim.currentState = LIGHT_STATES.NS_GREEN;
+            sim.phaseTimer = 0;
+            sim.logEvent('PHASE', 'Manual Override: Forced N-S Green.');
+        });
+        document.getElementById('btnOverrideEW').addEventListener('click', () => {
+            sim.currentState = LIGHT_STATES.EW_GREEN;
+            sim.phaseTimer = 0;
+            sim.logEvent('PHASE', 'Manual Override: Forced E-W Green.');
+        });
+
+        // Emergency Dispatch Button
+        document.getElementById('btnEmergencyDispatch').addEventListener('click', () => {
+            sim.dispatchEmergency();
+        });
+
+        // Operating Mode Toggle
+        const btnAdaptive = document.getElementById('btnModeAdaptive');
+        const btnFixed = document.getElementById('btnModeFixed');
+
+        btnAdaptive.addEventListener('click', () => {
+            sim.mode = 'ADAPTIVE';
+            btnAdaptive.className = 'p-3 bg-indigo-600/20 border border-indigo-500 text-indigo-300 rounded-xl text-xs font-semibold text-left transition flex flex-col justify-between';
+            btnFixed.className = 'p-3 bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold text-left transition flex flex-col justify-between';
+            sim.logEvent('PHASE', 'Switched controller mode to Adaptive Queue-Aware Optimization.');
+        });
+
+        btnFixed.addEventListener('click', () => {
+            sim.mode = 'FIXED';
+            btnFixed.className = 'p-3 bg-indigo-600/20 border border-indigo-500 text-indigo-300 rounded-xl text-xs font-semibold text-left transition flex flex-col justify-between';
+            btnAdaptive.className = 'p-3 bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold text-left transition flex flex-col justify-between';
+            sim.logEvent('PHASE', 'Switched controller mode to Fixed-Time Interval Cycle.');
+        });
+
+        // FSM Sliders
+        document.getElementById('sliderGreenDuration').addEventListener('input', (e) => {
+            sim.greenDuration = parseInt(e.target.value);
+            document.getElementById('valGreenDuration').textContent = `${e.target.value} sec`;
+        });
+        document.getElementById('sliderYellowDuration').addEventListener('input', (e) => {
+            sim.yellowDuration = parseInt(e.target.value);
+            document.getElementById('valYellowDuration').textContent = `${e.target.value} sec`;
+        });
+        document.getElementById('sliderAdaptiveThreshold').addEventListener('input', (e) => {
+            sim.adaptiveThreshold = parseInt(e.target.value);
+            document.getElementById('valAdaptiveThreshold').textContent = `${e.target.value} vehicles`;
+        });
+
+        // Tab Switching Logic
+        const tabControls = document.getElementById('tabBtnControls');
+        const tabAlgorithm = document.getElementById('tabBtnAlgorithm');
+        const tabLogs = document.getElementById('tabBtnLogs');
+
+        const contentControls = document.getElementById('tabContentControls');
+        const contentAlgorithm = document.getElementById('tabContentAlgorithm');
+        const contentLogs = document.getElementById('tabContentLogs');
+
+        function setTab(activeBtn, activeContent) {
+            [tabControls, tabAlgorithm, tabLogs].forEach(b => {
+                b.classList.remove('text-indigo-400', 'border-indigo-500', 'font-semibold');
+                b.classList.add('text-slate-400', 'border-transparent');
+            });
+            [contentControls, contentAlgorithm, contentLogs].forEach(c => c.classList.add('hidden'));
+
+            activeBtn.classList.add('text-indigo-400', 'border-indigo-500', 'font-semibold');
+            activeBtn.classList.remove('text-slate-400', 'border-transparent');
+            activeContent.classList.remove('hidden');
+        }
+
+        tabControls.addEventListener('click', () => setTab(tabControls, contentControls));
+        tabAlgorithm.addEventListener('click', () => setTab(tabAlgorithm, contentAlgorithm));
+        tabLogs.addEventListener('click', () => setTab(tabLogs, contentLogs));
+
+        // Log Filter Buttons
+        document.querySelectorAll('.log-filter').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const filter = e.target.dataset.filter;
+                document.querySelectorAll('.log-filter').forEach(f => {
+                    f.classList.remove('bg-indigo-600', 'text-white');
+                    f.classList.add('bg-slate-800', 'text-slate-400');
+                });
+                e.target.classList.add('bg-indigo-600', 'text-white');
+
+                document.querySelectorAll('.log-item').forEach(item => {
+                    if (filter === 'ALL' || item.dataset.category === filter) {
+                        item.style.display = 'block';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            });
+        });
+
+        document.getElementById('btnClearLogs').addEventListener('click', () => {
+            document.getElementById('logContainer').innerHTML = '';
+        });
+
+        // Info Modal Open/Close
+        const modal = document.getElementById('infoModal');
+        document.getElementById('btnInfoModal').addEventListener('click', () => modal.classList.remove('hidden'));
+        document.getElementById('btnCloseModal').addEventListener('click', () => modal.classList.add('hidden'));
+        document.getElementById('btnCloseModalBtn').addEventListener('click', () => modal.classList.add('hidden'));
+
+        // =========================================================================
+        // 7. START ANIMATION LOOP
+        // =========================================================================
+        window.onload = () => {
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
